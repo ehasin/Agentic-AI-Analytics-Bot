@@ -1,0 +1,280 @@
+{
+  "schema_id": "olist_ecommerce",
+  "name": "Olist Brazilian Ecommerce Data Product",
+  "description": "The Olist Ecommerce data product provides a comprehensive view of ~100k orders placed on a Brazilian online marketplace between 2016 and 2018. It covers the full order lifecycle: customer placement, payment, seller fulfillment, carrier delivery, and post-delivery review. USE this data product to: analyze order volumes and revenue trends over time; compare seller performance by delivery speed, order volume, and review scores; evaluate payment method distribution and average order values; identify geographic patterns in customer demand and seller locations; measure delivery performance (on-time vs late); analyze product category popularity and pricing; assess customer satisfaction through review scores and comment sentiment; benchmark freight costs across regions and product types. DO NOT USE this data product for: real-time inventory or stock level analysis; individual customer identity resolution (IDs are anonymized); profit or margin analysis (cost data is not included, only prices and freight); marketing attribution or channel analysis; data beyond the 2016-2018 time window. Data covers: a single Brazilian marketplace (Olist). All monetary values are in BRL (Brazilian Real). Net revenue can be approximated by excluding orders with order_status = 'canceled' from revenue calculations.",
+  "version": "1.0.1",
+  "tables": [
+    {
+      "table_name": "orders",
+      "description": "Central fact table for the ecommerce dataset. Each row represents one customer order. Grain: one row per order_id. Contains order status and key lifecycle timestamps from purchase through delivery. This is the hub table that connects to all other tables. RELATIONSHIPS: Each order belongs to one customer (many-to-one). An order can have multiple items in order_items, multiple payment rows in payments, and typically one review in reviews. JOIN GUIDANCE: Join to order_items ON order_id for item-level details (price, freight, product, seller). Join to payments ON order_id for payment method and amounts. Join to reviews ON order_id for customer review scores and comments. Join to customers ON customer_id for customer location. USE FOR: order-level KPIs (count, status distribution, delivery timeliness), time-series analysis of order volume, delivery performance metrics (actual vs estimated delivery date). DO NOT USE FOR: item-level or product-level analysis — use order_items joined to products instead.",
+      "columns": [
+        {
+          "column_name": "order_id",
+          "data_type": "object",
+          "description": "Unique identifier for the order. Primary key. Shared join key across order_items, payments, and reviews tables."
+        },
+        {
+          "column_name": "customer_id",
+          "data_type": "object",
+          "description": "Identifier for the customer who placed this order. Foreign key to customers table ON customer_id (many-to-one: each order belongs to one customer). Note: this is an order-scoped ID; use customer_unique_id in the customers table for cross-order customer identification."
+        },
+        {
+          "column_name": "order_status",
+          "data_type": "object",
+          "description": "Current status of the order. Values include: 'delivered', 'shipped', 'canceled', 'unavailable', 'invoiced', 'processing', 'created', 'approved'. Most orders are 'delivered'. Filter to 'delivered' for completed-order analysis. Filter WHERE order_status != 'canceled' for net revenue calculations."
+        },
+        {
+          "column_name": "order_purchase_timestamp",
+          "data_type": "object",
+          "description": "Timestamp when the customer placed the order. Primary time dimension for trend analysis. Format: YYYY-MM-DD HH:MM:SS. Use CAST(order_purchase_timestamp AS TIMESTAMP) for date operations in SQL."
+        },
+        {
+          "column_name": "order_approved_at",
+          "data_type": "object",
+          "description": "Timestamp when the order payment was approved. May be null for non-approved orders. Use to calculate payment processing time (approved_at minus purchase_timestamp)."
+        },
+        {
+          "column_name": "order_delivered_carrier_date",
+          "data_type": "object",
+          "description": "Timestamp when the seller handed the order to the carrier. Use to calculate seller processing time (carrier_date minus approved_at)."
+        },
+        {
+          "column_name": "order_delivered_customer_date",
+          "data_type": "object",
+          "description": "Timestamp when the order was delivered to the customer. Compare to order_estimated_delivery_date to determine if delivery was on-time or late. May be null if not yet delivered."
+        },
+        {
+          "column_name": "order_estimated_delivery_date",
+          "data_type": "object",
+          "description": "Estimated delivery date shown to the customer at purchase time. Compare to order_delivered_customer_date to measure delivery accuracy. Orders delivered after this date are considered late."
+        }
+      ]
+    },
+    {
+      "table_name": "order_items",
+      "description": "Item-level fact table. Each row represents one item within an order. Grain: one row per order_id + order_item_id (sequence number). Contains price and freight for each item, plus links to the product and seller. RELATIONSHIPS: Each order item belongs to one order (many-to-one via order_id). Each order item references one product (many-to-one via product_id). Each order item is fulfilled by one seller (many-to-one via seller_id). A product can appear in many order items. A seller can fulfill many items. JOIN GUIDANCE: Join to orders ON order_id for order timestamps and status. Join to products ON product_id for product category and attributes. Join to sellers ON seller_id for seller location. USE FOR: revenue analysis (price + freight_value), product-level and seller-level performance, item count per order, freight cost analysis. Net revenue (excluding cancellations) can be calculated by joining to orders and filtering WHERE order_status != 'canceled'. DO NOT USE FOR: payment method analysis — use payments table instead. Note: an order can have multiple items, possibly from different sellers.",
+      "columns": [
+        {
+          "column_name": "order_id",
+          "data_type": "object",
+          "description": "Identifier of the order this item belongs to. Foreign key to orders table ON order_id (many-to-one: each item belongs to one order, an order can have multiple items)."
+        },
+        {
+          "column_name": "order_item_id",
+          "data_type": "int64",
+          "description": "Sequential number identifying the item within the order (1, 2, 3...). Combined with order_id forms the grain of this table."
+        },
+        {
+          "column_name": "product_id",
+          "data_type": "object",
+          "description": "Identifier of the product purchased. Foreign key to products table ON product_id (many-to-one: each item references one product, a product can appear in many items)."
+        },
+        {
+          "column_name": "seller_id",
+          "data_type": "object",
+          "description": "Identifier of the seller who fulfilled this item. Foreign key to sellers table ON seller_id (many-to-one: each item is fulfilled by one seller, a seller can fulfill many items). Different items in the same order may come from different sellers."
+        },
+        {
+          "column_name": "shipping_limit_date",
+          "data_type": "object",
+          "description": "Deadline by which the seller must hand the item to the carrier. Used to evaluate seller shipping compliance."
+        },
+        {
+          "column_name": "price",
+          "data_type": "float64",
+          "description": "Price of the item in BRL (Brazilian Real). This is the item sale price, not including freight. Sum across items in an order for total order product value."
+        },
+        {
+          "column_name": "freight_value",
+          "data_type": "float64",
+          "description": "Freight/shipping cost for this item in BRL. Each item has its own freight value even within the same order. Sum price + freight_value for total item cost to customer."
+        }
+      ]
+    },
+    {
+      "table_name": "products",
+      "description": "Product dimension table. Each row represents one unique product listed on the marketplace. Grain: one row per product_id. Contains product category and physical attributes. RELATIONSHIPS: A product can appear in many order items (one-to-many). JOIN GUIDANCE: Join to order_items ON product_id to connect products to orders. USE FOR: category-level revenue and volume analysis, product attribute analysis (size, weight, photo count), identifying top-selling categories. DO NOT USE FOR: inventory or stock level analysis (not available). Note: product_category_name is in Portuguese.",
+      "columns": [
+        {
+          "column_name": "product_id",
+          "data_type": "object",
+          "description": "Unique identifier for the product. Primary key. Join target from order_items ON product_id."
+        },
+        {
+          "column_name": "product_category_name",
+          "data_type": "object",
+          "description": "Product category name in Portuguese (e.g., 'beleza_saude' = health & beauty, 'informatica_acessorios' = computer accessories, 'cama_mesa_banho' = bed/table/bath). May contain nulls for uncategorized products."
+        },
+        {
+          "column_name": "product_name_lenght",
+          "data_type": "float64",
+          "description": "Character length of the product name. Note: column name has a typo ('lenght' instead of 'length'). May be null."
+        },
+        {
+          "column_name": "product_description_lenght",
+          "data_type": "float64",
+          "description": "Character length of the product description. Note: column name has a typo ('lenght' instead of 'length'). May be null."
+        },
+        {
+          "column_name": "product_photos_qty",
+          "data_type": "float64",
+          "description": "Number of product photos in the listing. May be null."
+        },
+        {
+          "column_name": "product_weight_g",
+          "data_type": "float64",
+          "description": "Product weight in grams. Useful for freight cost analysis. May be null."
+        },
+        {
+          "column_name": "product_length_cm",
+          "data_type": "float64",
+          "description": "Product package length in centimeters. May be null."
+        },
+        {
+          "column_name": "product_height_cm",
+          "data_type": "float64",
+          "description": "Product package height in centimeters. May be null."
+        },
+        {
+          "column_name": "product_width_cm",
+          "data_type": "float64",
+          "description": "Product package width in centimeters. May be null."
+        }
+      ]
+    },
+    {
+      "table_name": "customers",
+      "description": "Customer dimension table. Each row represents a customer as seen in a specific order. Grain: one row per customer_id. Contains customer geographic information. IMPORTANT: customer_id is order-scoped (one per order). Use customer_unique_id to count distinct real customers across multiple orders. RELATIONSHIPS: Each customer can have multiple orders (one-to-many via customer_id in orders table). JOIN GUIDANCE: Join to orders ON customer_id to connect customers to their orders. USE FOR: geographic analysis of customer base (city, state, zip), counting unique customers (use customer_unique_id), regional demand patterns. DO NOT USE FOR: customer demographic or behavioral segmentation (no age, gender, or preference data available).",
+      "columns": [
+        {
+          "column_name": "customer_id",
+          "data_type": "object",
+          "description": "Order-scoped customer identifier. Primary key. Join target from orders ON customer_id. WARNING: this ID is unique per order, not per real customer. Use customer_unique_id to deduplicate."
+        },
+        {
+          "column_name": "customer_unique_id",
+          "data_type": "object",
+          "description": "True unique customer identifier across all orders. Use this column (not customer_id) when counting distinct customers or analyzing repeat purchase behavior."
+        },
+        {
+          "column_name": "customer_zip_code_prefix",
+          "data_type": "int64",
+          "description": "First 5 digits of the customer's zip code. Can be used for geographic clustering."
+        },
+        {
+          "column_name": "customer_city",
+          "data_type": "object",
+          "description": "City where the customer is located. All lowercase. Largest concentration is 'sao paulo'."
+        },
+        {
+          "column_name": "customer_state",
+          "data_type": "object",
+          "description": "Two-letter Brazilian state code (e.g., 'SP' = São Paulo, 'RJ' = Rio de Janeiro, 'MG' = Minas Gerais). Use for state-level geographic analysis."
+        }
+      ]
+    },
+    {
+      "table_name": "sellers",
+      "description": "Seller dimension table. Each row represents one unique seller on the marketplace. Grain: one row per seller_id. Contains seller geographic information. RELATIONSHIPS: Each seller can fulfill many order items (one-to-many via seller_id in order_items table). JOIN GUIDANCE: Join to order_items ON seller_id to connect sellers to the items they fulfilled. USE FOR: seller location analysis, geographic seller-customer distance analysis, seller concentration by city/state. DO NOT USE FOR: seller performance metrics — join order_items to orders and reviews for that.",
+      "columns": [
+        {
+          "column_name": "seller_id",
+          "data_type": "object",
+          "description": "Unique identifier for the seller. Primary key. Join target from order_items ON seller_id."
+        },
+        {
+          "column_name": "seller_zip_code_prefix",
+          "data_type": "int64",
+          "description": "First 5 digits of the seller's zip code."
+        },
+        {
+          "column_name": "seller_city",
+          "data_type": "object",
+          "description": "City where the seller is located. All lowercase."
+        },
+        {
+          "column_name": "seller_state",
+          "data_type": "object",
+          "description": "Two-letter Brazilian state code where the seller is located."
+        }
+      ]
+    },
+    {
+      "table_name": "payments",
+      "description": "Payment fact table. Each row represents one payment installment for an order. Grain: one row per order_id + payment_sequential. An order can have multiple payment rows if paid in installments or with multiple methods. RELATIONSHIPS: Each payment belongs to one order (many-to-one via order_id). An order can have multiple payment rows. JOIN GUIDANCE: Join to orders ON order_id for order context. USE FOR: payment method analysis, installment behavior, total payment value per order (SUM payment_value GROUP BY order_id), revenue by payment type. DO NOT USE FOR: item-level revenue attribution — use order_items.price for that.",
+      "columns": [
+        {
+          "column_name": "order_id",
+          "data_type": "object",
+          "description": "Identifier of the order this payment belongs to. Foreign key to orders table ON order_id (many-to-one: each payment belongs to one order, an order can have multiple payment rows)."
+        },
+        {
+          "column_name": "payment_sequential",
+          "data_type": "int64",
+          "description": "Sequential number for payments within the same order (1, 2, 3...). If an order has multiple payment methods or installments, each gets a separate row."
+        },
+        {
+          "column_name": "payment_type",
+          "data_type": "object",
+          "description": "Payment method used. Values: 'credit_card', 'boleto' (Brazilian bank slip), 'debit_card', 'voucher', 'not_defined'. Credit card is the most common."
+        },
+        {
+          "column_name": "payment_installments",
+          "data_type": "int64",
+          "description": "Number of installments chosen by the customer for this payment. Common in Brazil — customers frequently split payments into 2-12 monthly installments."
+        },
+        {
+          "column_name": "payment_value",
+          "data_type": "float64",
+          "description": "Value of this payment in BRL. SUM(payment_value) grouped by order_id gives total order payment. May not exactly match SUM(price + freight_value) from order_items due to vouchers or rounding."
+        }
+      ]
+    },
+    {
+      "table_name": "reviews",
+      "description": "Review fact table. Each row represents one customer review for an order. Grain: one row per review_id (typically one review per order, but some orders may have multiple). Contains review score and optional text feedback. RELATIONSHIPS: Each review references one order (many-to-one via order_id). Most orders have one review. JOIN GUIDANCE: Join to orders ON order_id for order context and timestamps. USE FOR: customer satisfaction analysis, average review scores by category/seller/region, identifying low-rated sellers or products, review response time analysis. DO NOT USE FOR: real-time sentiment monitoring. Note: review comments are in Portuguese and many are null.",
+      "columns": [
+        {
+          "column_name": "review_id",
+          "data_type": "object",
+          "description": "Unique identifier for the review. Primary key."
+        },
+        {
+          "column_name": "order_id",
+          "data_type": "object",
+          "description": "Identifier of the order being reviewed. Foreign key to orders table ON order_id (many-to-one: each review references one order, most orders have one review). Use to join reviews to order/product/seller data."
+        },
+        {
+          "column_name": "review_score",
+          "data_type": "int64",
+          "description": "Customer satisfaction score from 1 (worst) to 5 (best). Average across the dataset is ~4.0. Use for satisfaction KPIs and comparisons."
+        },
+        {
+          "column_name": "review_comment_title",
+          "data_type": "object",
+          "description": "Title/subject of the review comment. In Portuguese. Often null — many customers only leave a score without text."
+        },
+        {
+          "column_name": "review_comment_message",
+          "data_type": "object",
+          "description": "Body text of the review comment. In Portuguese. Often null. When present, contains detailed customer feedback about the product or delivery experience."
+        },
+        {
+          "column_name": "review_creation_date",
+          "data_type": "object",
+          "description": "Date when the customer submitted the review. Format: YYYY-MM-DD HH:MM:SS."
+        },
+        {
+          "column_name": "review_answer_timestamp",
+          "data_type": "object",
+          "description": "Timestamp when the review was answered/acknowledged. Format: YYYY-MM-DD HH:MM:SS."
+        }
+      ]
+    }
+  ],
+  "defaults": {
+    "nullable": true,
+    "description": "If description is missing, use the field name as description.",
+    "data_type": "object"
+  }
+}
