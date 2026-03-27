@@ -8,71 +8,149 @@ import time
 import duckdb
 from anthropic import Anthropic
 
-# ─── Page Config ───
+# ═══════════════════════════════════════════════════════════
+# PAGE CONFIG
+# ═══════════════════════════════════════════════════════════
 st.set_page_config(
-    page_title="Analytics Bot",
-    page_icon="📊",
+    page_title="Analytics Agent",
+    page_icon="◆",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# ─── Custom CSS ───
-st.markdown("""
+# ═══════════════════════════════════════════════════════════
+# SESSION STATE
+# ═══════════════════════════════════════════════════════════
+defaults = {
+    "messages": [],
+    "history": [],
+    "api_key": "",
+    "data_loaded": False,
+    "last_ack": "",
+    "theme": "dark",
+    "user_intensity": 0,
+    "auto_intensity": 0,
+    "intensity_override": False,
+    "first_prompt_sent": False,
+}
+for k, v in defaults.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
+
+# ═══════════════════════════════════════════════════════════
+# THEME
+# ═══════════════════════════════════════════════════════════
+is_dark = st.session_state.theme == "dark"
+
+if is_dark:
+    bg = "#0c0f14"
+    bg_secondary = "#141820"
+    bg_card = "#1a1f2b"
+    text_primary = "#e8eaed"
+    text_secondary = "#8b919e"
+    accent = "#6c8cff"
+    accent_dim = "#2a3558"
+    border = "#252a36"
+    code_bg = "#111520"
+    success = "#4ade80"
+    warning = "#fbbf24"
+    error_c = "#f87171"
+else:
+    bg = "#f8f9fb"
+    bg_secondary = "#ffffff"
+    bg_card = "#ffffff"
+    text_primary = "#1a1d23"
+    text_secondary = "#5f6672"
+    accent = "#4361ee"
+    accent_dim = "#e0e7ff"
+    border = "#e2e5eb"
+    code_bg = "#f1f3f5"
+    success = "#16a34a"
+    warning = "#ca8a04"
+    error_c = "#dc2626"
+
+st.markdown(f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
-.stApp {
-    font-family: 'DM Sans', sans-serif;
-}
-
-/* Chat messages */
-.stChatMessage {
-    font-family: 'DM Sans', sans-serif;
-    font-size: 0.95rem;
-    line-height: 1.6;
-}
-
-/* Code blocks in chat */
-.stChatMessage code {
-    font-family: 'JetBrains Mono', monospace;
+.stApp {{
+    background: {bg};
+    font-family: 'Outfit', sans-serif;
+    color: {text_primary};
+}}
+section[data-testid="stSidebar"] {{
+    background: {bg_secondary};
+    border-right: 1px solid {border};
+}}
+section[data-testid="stSidebar"] * {{
+    font-family: 'Outfit', sans-serif;
+    color: {text_primary};
+}}
+.stChatMessage {{
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.93rem;
+    line-height: 1.65;
+    background: transparent !important;
+    border: none !important;
+}}
+.stChatMessage code {{
+    font-family: 'IBM Plex Mono', monospace;
     font-size: 0.82rem;
-}
-
-/* Sidebar styling */
-section[data-testid="stSidebar"] {
-    background-color: #0e1117;
-}
-
-section[data-testid="stSidebar"] .stMarkdown {
-    font-family: 'DM Sans', sans-serif;
-}
-
-/* Status badges */
-.status-badge {
+    background: {code_bg};
+}}
+.mode-label {{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: {text_secondary};
+}}
+.pill {{
     display: inline-block;
     padding: 2px 10px;
-    border-radius: 12px;
-    font-size: 0.75rem;
+    border-radius: 10px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
     font-weight: 500;
-    font-family: 'JetBrains Mono', monospace;
-}
-.status-can-answer { background: #1a3a2a; color: #4ade80; }
-.status-cant-answer { background: #3a1a1a; color: #f87171; }
-.status-clarification { background: #3a2a1a; color: #fbbf24; }
-
-/* Depth indicator */
-.depth-indicator {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.7rem;
-    padding: 2px 8px;
-    border-radius: 4px;
-    background: #1e293b;
-    color: #94a3b8;
-}
+}}
+.pill-retrieve {{ background: {accent_dim}; color: {accent}; }}
+.pill-suggest {{ background: {"#1a2e1a" if is_dark else "#e6f4e6"}; color: {success}; }}
+.pill-explore {{ background: {"#2e2a1a" if is_dark else "#fef3c7"}; color: {warning}; }}
+.pill-reason {{ background: {"#2e1a2a" if is_dark else "#fce7f3"}; color: {"#c084fc" if is_dark else "#a855f7"}; }}
+.transition-msg {{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    color: {text_secondary};
+    padding: 4px 0;
+    margin-bottom: 4px;
+    font-style: italic;
+}}
+.about-box {{
+    background: {bg_card};
+    border: 1px solid {border};
+    border-radius: 10px;
+    padding: 16px;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    color: {text_secondary};
+}}
+.about-box a {{ color: {accent}; text-decoration: none; }}
+.about-box a:hover {{ text-decoration: underline; }}
+.streamlit-expanderHeader {{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.78rem;
+    color: {text_secondary};
+}}
+#MainMenu {{visibility: hidden;}}
+footer {{visibility: hidden;}}
+header {{visibility: hidden;}}
 </style>
 """, unsafe_allow_html=True)
 
-# ─── Data Loading (cached) ───
+# ═══════════════════════════════════════════════════════════
+# DATA LOADING
+# ═══════════════════════════════════════════════════════════
 @st.cache_data
 def load_data():
     orders = pd.read_csv("https://raw.githubusercontent.com/olist/work-at-olist-data/master/datasets/olist_orders_dataset.csv")
@@ -82,46 +160,119 @@ def load_data():
     payments = pd.read_csv("https://raw.githubusercontent.com/olist/work-at-olist-data/master/datasets/olist_order_payments_dataset.csv")
     sellers = pd.read_csv("https://raw.githubusercontent.com/olist/work-at-olist-data/master/datasets/olist_sellers_dataset.csv")
     reviews = pd.read_csv("https://raw.githubusercontent.com/olist/work-at-olist-data/master/datasets/olist_order_reviews_dataset.csv")
-    
-    tables = {
-        "orders": orders,
-        "order_items": order_items,
-        "products": products,
-        "customers": customers,
-        "payments": payments,
-        "sellers": sellers,
-        "reviews": reviews
+    return {
+        "orders": orders, "order_items": order_items, "products": products,
+        "customers": customers, "payments": payments, "sellers": sellers, "reviews": reviews
     }
-    return tables
 
 @st.cache_data
 def load_schema():
     with open("data_model.json", "r") as f:
-        data_model = json.load(f)
-    return json.dumps(data_model, indent=2)
+        return json.dumps(json.load(f), indent=2)
 
-# ─── Agent Functions ───
-def get_llm_client():
-    return Anthropic(api_key=st.session_state.api_key)
+# ═══════════════════════════════════════════════════════════
+# AGENT FUNCTIONS
+# ═══════════════════════════════════════════════════════════
+MODE_NAMES = {0: "Retrieve", 1: "Suggest", 2: "Explore", 3: "Reason"}
+MODE_DESC = {
+    0: "Quick factual answers. No follow-ups.",
+    1: "Answer + suggest one follow-up direction.",
+    2: "Answer + proactively run supplementary queries.",
+    3: "Deep reasoning with advanced model. Focused analysis.",
+}
+MODE_PILLS = {0: "pill-retrieve", 1: "pill-suggest", 2: "pill-explore", 3: "pill-reason"}
+TRANSITIONS = {
+    (0,1): "Switching to Suggest — will offer a useful follow-up direction.",
+    (0,2): "Switching to Explore — will proactively analyze adjacent dimensions.",
+    (0,3): "Switching to Reason — engaging advanced model for reliable analysis.",
+    (1,0): "Switching to Retrieve — quick factual answer.",
+    (1,2): "Switching to Explore — broadening the analysis scope.",
+    (1,3): "Switching to Reason — engaging advanced model for deeper analysis.",
+    (2,0): "Switching to Retrieve — narrowing to a quick answer.",
+    (2,1): "Switching to Suggest — focused answer with follow-up direction.",
+    (2,3): "Switching to Reason — engaging advanced model for deeper analysis.",
+    (3,0): "Switching to Retrieve — quick factual answer.",
+    (3,1): "Switching to Suggest — lighter analysis with follow-up.",
+    (3,2): "Switching to Explore — broadening scope with supplementary queries.",
+}
+ACK_OPTIONS = ["Got it", "Sure", "OK", "On it", "Let me check",
+               "Right", "Understood", "Will do", "Looking into it", "One moment"]
 
-def call_llm(prompt, max_retries=3):
-    client = get_llm_client()
-    for attempt in range(max_retries):
+def infer_intensity(question, history):
+    reasoning = [
+        "explain", "why is", "why are", "why do", "why did", "why was", "why were",
+        "what drives", "what drove", "drivers behind", "drivers of", "driven by",
+        "what caused", "what causes", "what factors", "what leads to", "what led to",
+        "how do you explain", "root cause", "interpret", "implications",
+        "relationship between", "compare and explain", "reason for", "reasons for",
+        "what does this mean", "what can we conclude",
+        "assess the impact", "evaluate the effect", "account for",
+        "correlat", "causal", "contribute to", "contributing"
+    ]
+    exploratory = [
+        "tell me about", "overview", "broadly", "comprehensive",
+        "deep dive", "in depth", "thorough", "explore",
+        "what can you tell me", "break down everything",
+        "full picture", "all aspects", "walk me through"
+    ]
+    analytical = [
+        "analyze", "analyse", "assess", "evaluate", "investigate",
+        "propose", "compare", "trend", "pattern", "distribution",
+        "break down", "breakdown"
+    ]
+
+    q = question.lower()
+    min_i, peak = 0, 0
+
+    if history:
+        min_i = 1
+        peak = max(h.get("intensity", 0) for h in history)
+        simple = any(p in q for p in ["how many","what is the","list","count","total",
+                     "average","sum","which has the most","top 5","top 10","what percentage","show me"])
+        if not simple:
+            min_i = max(min_i, peak - 1)
+
+    if any(re.search(p, q) for p in reasoning):
+        return max(3, min_i), "deep reasoning required"
+    if any(p in q for p in exploratory):
+        return max(2, min_i), "exploratory question"
+    if any(p in q for p in analytical):
+        return max(1, min_i), "analytical question"
+
+    if history:
+        if len(history) >= 4 and min_i < 2:
+            if all(h.get("intensity", 0) >= 1 for h in history[-3:]):
+                return 2, "sustained conversation"
+        if len(history) >= 2:
+            words = set()
+            for h in history[-3:]:
+                words.update(h["question"].lower().split())
+            if len(words) > 20:
+                return max(2, min_i), "expanding scope"
+
+    return min_i, "follow-up" if min_i > 0 else None
+
+def get_model(i):
+    return "claude-opus-4-6" if i == 3 else "claude-sonnet-4-6"
+
+def get_scope(i):
+    return {0:0, 1:1, 2:2, 3:1}.get(i, 0)
+
+def llm(prompt, model="claude-sonnet-4-6", retries=3):
+    client = Anthropic(api_key=st.session_state.api_key)
+    for attempt in range(retries):
         try:
-            response = client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=4096,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            return response.content[0].text.strip()
+            r = client.messages.create(model=model, max_tokens=4096,
+                                       messages=[{"role":"user","content":prompt}])
+            return r.content[0].text.strip()
         except Exception as e:
-            if "429" in str(e) and attempt < max_retries - 1:
+            if "429" in str(e) and attempt < retries-1:
                 time.sleep(15)
             else:
                 raise e
 
-def classify_question(question, schema, tables):
-    prompt = f"""You are a data analyst assistant.
+def classify(question, schema, tables, model):
+    text = llm(f"""You are a data analyst assistant.
 
 DATA MODEL:
 {schema}
@@ -131,500 +282,329 @@ Available tables: {list(tables.keys())}
 A user asked: {question}
 
 Classify into one of three categories:
-- can_answer: the data model is sufficient to answer this question. This includes questions about the data model itself (what tables exist, what columns mean, what use cases are supported).
-- cant_answer: requires data not in the model. Reasons: question_domain_mismatch, missing_data, other
-- clarifications_needed: too vague or ambiguous
-IMPORTANT: If no concrete metric or KPI is specified, and a clear kpi can not be inferred from the context or available metadata, classify as clarifications_needed.
-Also classify as clarifications_needed if the question contains assumptions that would make the answer trivially uniform or analytically meaningless (e.g., "profit margin assuming COGS is X% of price" produces identical margins for every category). In such cases, keep the explanation to 1-2 sentences and suggest one alternative question. Do not explain the math or why it's trivial — the user understands, they may have just phrased it differently than intended.
+- can_answer: the data model is sufficient. Includes questions about the data model itself.
+- cant_answer: requires data not in the model.
+- clarifications_needed: too vague or ambiguous.
+IMPORTANT: If no concrete metric specified and can't be inferred, classify as clarifications_needed.
+Also clarifications_needed if assumptions make the answer trivially uniform.
 
-Respond in EXACTLY this format:
+Respond EXACTLY:
 CLASSIFICATION: <can_answer|cant_answer|clarifications_needed>
-REASON: <REQUIRED. If cant_answer: explain specifically which tables and columns ARE available and which are missing. If clarifications_needed: explain what the user needs to specify. If can_answer: briefly state which tables and columns will be used, or which parts of the data model documentation answer the question.>"""
+REASON: <REQUIRED. Explain specifically.>""", model=model)
 
-    text = call_llm(prompt)
-    classification = "can_answer"
-    reason = ""
+    c, r = "can_answer", ""
     for line in text.split("\n"):
-        if line.startswith("CLASSIFICATION:"):
-            classification = line.split(":")[1].strip().lower()
-        if line.startswith("REASON:"):
-            reason = line.split(":", 1)[1].strip()
-    return classification, reason
+        if line.startswith("CLASSIFICATION:"): c = line.split(":")[1].strip().lower()
+        if line.startswith("REASON:"): r = line.split(":",1)[1].strip()
+    return c, r
 
-def plan_queries(question, schema, tables, depth):
-    if depth == 0:
-        depth_instruction = "Generate ONLY the minimum queries needed to directly answer the user's question. No additional context or analysis."
-    else:
-        depth_instruction = "First, generate queries to directly answer the user's question. Then, assess the user's likely intent and add 2-3 supplementary queries that provide useful context."
-
-    prompt = f"""You are a data analyst. Break down the user's question into a structured analysis plan.
+def plan(question, schema, tables, scope, model):
+    scope_map = {
+        0: "Generate ONLY minimum queries to directly answer. No extras.",
+        1: "Generate queries to directly answer. No supplementary queries.",
+        2: "Generate direct answer queries + 2-3 supplementary queries for context."
+    }
+    text = llm(f"""You are a data analyst. Break down the question into queries.
 
 DATA MODEL:
 {schema}
 
 Available tables: {list(tables.keys())}
-
 User question: {question}
 
-{depth_instruction}
+{scope_map.get(scope, scope_map[0])}
 
-You also have direct access to the DATA MODEL documentation above. If the question asks about table descriptions, use cases, column meanings, or data model structure, you can reference that documentation directly in your labels.
+You have access to the DATA MODEL documentation. Use it for metadata questions.
 
-For each query, provide:
-- A short label describing what this query answers
-- Whether it's "primary" (directly answers the question) or "supplementary" (adds context)
-- The SQL (DuckDB syntax) query
+For each query provide label, type (primary/supplementary), and SQL (DuckDB). No semicolons.
 
-Rules for queries:
-- Standard SQL compatible with DuckDB
-- Use CAST(column AS TIMESTAMP) for date conversions
-- Use DuckDB date functions (DATE_PART, DATEDIFF, etc.)
-- No semicolons
-- Each query must be independently executable
-- Only use tables and columns from the data model
-- Do not assume currency, units, or external data not in the model
+Respond using XML:
+<query><label>...</label><type>primary</type><code>SELECT ...</code></query>""", model=model)
 
-Respond using XML tags:
-<query>
-<label>What this query answers</label>
-<type>primary</type>
-<code>
-SELECT ...
-</code>
-</query>
-
-Generate as many query blocks as needed."""
-
-    text = call_llm(prompt)
     queries = []
-    query_blocks = re.findall(r'<query>(.*?)</query>', text, re.DOTALL)
-    for block in query_blocks:
-        label_match = re.search(r'<label>(.*?)</label>', block, re.DOTALL)
-        type_match = re.search(r'<type>(.*?)</type>', block, re.DOTALL)
-        code_match = re.search(r'<code>(.*?)</code>', block, re.DOTALL)
-        if label_match and code_match:
-            queries.append({
-                "label": label_match.group(1).strip(),
-                "type": type_match.group(1).strip() if type_match else "primary",
-                "code": code_match.group(1).strip().rstrip(";"),
-                "result": None,
-                "error": None
-            })
+    for block in re.findall(r'<query>(.*?)</query>', text, re.DOTALL):
+        l = re.search(r'<label>(.*?)</label>', block, re.DOTALL)
+        t = re.search(r'<type>(.*?)</type>', block, re.DOTALL)
+        c = re.search(r'<code>(.*?)</code>', block, re.DOTALL)
+        if l and c:
+            queries.append({"label":l.group(1).strip(),
+                          "type":t.group(1).strip() if t else "primary",
+                          "code":c.group(1).strip().rstrip(";"),
+                          "result":None, "error":None})
 
-    plan_prompt = f"""Summarize the analysis plan in natural language.
-
+    ep = llm(f"""Summarize this analysis plan briefly.
 User question: {question}
-Depth: {"Direct answer only" if depth == 0 else "Direct answer plus contextual analysis"}
+Queries: {chr(10).join([f"- [{q['type']}] {q['label']}" for q in queries])}
+Format: INTENT: ... / QUERIES: ... / APPROACH: ...
+No markdown.""", model=model)
+    return queries, ep
 
-Queries planned:
-{chr(10).join([f"- [{q['type']}] {q['label']}" for q in queries])}
-
-Write a brief execution plan in this format:
-INTENT: <one sentence describing the perceived user intent>
-QUERIES: <comma-separated list of what each query answers>
-APPROACH: <one sentence on how results will be synthesized>
-
-No markdown, no extra text."""
-
-    execution_plan = call_llm(plan_prompt)
-    return queries, execution_plan
-
-def execute_queries(queries, tables):
+def execute(queries, tables):
     for q in queries:
         try:
             con = duckdb.connect()
-            for name, df in tables.items():
-                con.register(name, df)
-            code = q["code"].replace("```", "").strip().rstrip(";")
-            result_df = con.execute(code).df()
-            q["result"] = result_df.to_string(index=False)
+            for n, df in tables.items(): con.register(n, df)
+            q["result"] = con.execute(q["code"].replace("```","").strip().rstrip(";")).df().to_string(index=False)
             con.close()
         except Exception as e:
             q["error"] = str(e)
     return queries
 
-def format_narrative(question, queries, depth, schema):
-    results_text = ""
+def narrate(question, queries, scope, intensity, schema, model):
+    results = ""
     for q in queries:
-        results_text += f"\n[{q['type'].upper()}] {q['label']}\n"
-        if q["result"]:
-            results_text += f"Result:\n{q['result']}\n"
-        else:
-            results_text += f"Error: {q['error']}\n"
+        results += f"\n[{q['type'].upper()}] {q['label']}\n"
+        results += f"Result:\n{q['result']}\n" if q["result"] else f"Error: {q['error']}\n"
 
-    if depth == 0:
-        format_instruction = """Format rules:
-- Answer in 1-3 sentences, one per primary query result
-- State precise numbers with thousand separators
-- If the question has multiple parts, address each part clearly
-- Do not add context, interpretation, or follow-up suggestions"""
-    else:
-        format_instruction = """Format rules:
-- Start with a direct answer to the user's question using primary query results, precise numbers with thousand separators
-- Address every part of the user's question explicitly
-- Then weave in supplementary findings naturally, each as its own short paragraph starting with "If you're interested in [topic],"
-- Use precise numbers first, approximations only after
-- Skip any queries that failed silently
-- End with one suggested follow-up question: "Would you like me to analyze [specific topic] next?"
-- The suggested question should be naturally related but different from what was already covered"""
-
-    prompt = f"""Compose a user-friendly analytical answer from these query results.
+    scope_rules = {
+        0: "Answer in 1-3 sentences. Precise numbers with thousand separators. No follow-ups.",
+        1: "Answer directly with precise numbers. End with exactly ONE follow-up: 'Would you like me to [specific action] next?'",
+        2: "Answer directly, then supplementary findings starting with 'If you're interested in [topic],'. End with ONE follow-up."
+    }
+    return llm(f"""Compose a user-friendly answer from these query results.
 
 User question: {question}
+DATA MODEL: {schema}
+Query results: {results}
 
-DATA MODEL (use for metadata questions about table structure, use cases, column meanings):
-{schema}
+Format: {scope_rules.get(scope, scope_rules[0])}
 
-Query results:
-{results_text}
+Rules:
+- Use DATA MODEL for metadata questions
+- No currency/unit assumptions unless in data model
+- No adjectives like good/bad/impressive
+- No query details or table names
+- No filler phrases like "Based on the query results"
+- NEVER infer customer intent from patterns
+- Follow-up suggestions must be answerable with available data
+- Frame follow-ups as descriptive, not causal
 
-{format_instruction}
+Answer:""", model=model)
 
-General rules:
-- You have access to the DATA MODEL documentation above. Use it to answer questions about table structure, use cases, column meanings, or data model capabilities directly
-- When referencing metadata, present as facts without quoting documentation verbatim
-- Do not assume currency or units unless explicitly in the results
-- Do not use adjectives to characterize results as good/bad/impressive/concerning
-- Do not show query details, table names, or column names
-- Do not repeat raw data verbatim — synthesize into readable prose
-- Do not start sentences with filler phrases like "Based on the query results", "Analysis reveals", "The data shows that"
-- It IS acceptable to reference the data source mid-sentence for trust
-- If the query results show no meaningful variation, flag this to the user and suggest how to reformulate
-- NEVER infer customer intent, motivation, or strategy from purchasing patterns. State what the data shows but do not speculate on why. Correlation does not imply causation or intent.
-- When suggesting follow-up questions, never frame them as causal ("what drives", "why do customers"). Instead frame as descriptive ("how do X differ from Y", "what are the characteristics of Z").
+def agent(question, schema, tables, intensity=0):
+    model = get_model(intensity)
+    scope = get_scope(intensity)
 
-Answer:"""
-
-    return call_llm(prompt)
-
-def analyst_agent(question, schema, tables, depth=0):
-    # Phase 1: Classify
     try:
-        classification, reason = classify_question(question, schema, tables)
+        c, reason = classify(question, schema, tables, model)
     except Exception as e:
-        return {"stage1": "error", "answer": None, "code": "", "queries": [],
-                "execution_plan": None, "narrative": f"Classification failed: {e}", "error": str(e)}
+        return {"stage1":"error","answer":None,"code":"","queries":[],"execution_plan":None,
+                "narrative":f"Classification failed: {e}","intensity":intensity,"error":str(e)}
 
-    if classification == "cant_answer":
-        answer = f"Can't answer based on the available data. ({reason})"
-        return {"stage1": "cant_answer", "answer": answer, "code": "",
-                "queries": [], "execution_plan": None, "narrative": answer, "error": None}
+    if c == "cant_answer":
+        a = f"Can't answer based on the available data. ({reason})"
+        return {"stage1":"cant_answer","answer":a,"code":"","queries":[],
+                "execution_plan":None,"narrative":a,"intensity":intensity,"error":None}
+    if c == "clarifications_needed":
+        a = f"Please clarify: {reason}"
+        return {"stage1":"clarifications_needed","answer":a,"code":"","queries":[],
+                "execution_plan":None,"narrative":a,"intensity":intensity,"error":None}
 
-    if classification == "clarifications_needed":
-        answer = f"Please clarify: {reason}"
-        return {"stage1": "clarifications_needed", "answer": answer, "code": "",
-                "queries": [], "execution_plan": None, "narrative": answer, "error": None}
-
-    # Phase 2a: Plan queries
     try:
-        queries, execution_plan = plan_queries(question, schema, tables, depth)
+        queries, ep = plan(question, schema, tables, scope, model)
     except Exception as e:
-        return {"stage1": "can_answer", "answer": None, "code": "", "queries": [],
-                "execution_plan": None, "narrative": f"Query planning failed: {e}", "error": str(e)}
+        return {"stage1":"can_answer","answer":None,"code":"","queries":[],
+                "execution_plan":None,"narrative":f"Planning failed: {e}","intensity":intensity,"error":str(e)}
 
-    # Phase 2b: Execute queries
-    queries = execute_queries(queries, tables)
+    queries = execute(queries, tables)
+    primary = [q["result"] for q in queries if q["type"]=="primary" and q["result"]]
+    raw = "\n".join(primary) if primary else "No results"
+    code = "\n\n".join([f"-- {q['label']}\n{q['code']}" for q in queries])
 
-    primary_results = [q["result"] for q in queries if q["type"] == "primary" and q["result"]]
-    raw_answer = "\n".join(primary_results) if primary_results else "No results"
-    all_code = "\n\n".join([f"-- {q['label']}\n{q['code']}" for q in queries])
-
-    # Phase 3: Narrate
     try:
-        narrative = format_narrative(question, queries, depth, schema)
+        n = narrate(question, queries, scope, intensity, schema, model)
     except Exception as e:
-        narrative = f"(Narrative failed: {e})"
+        n = f"(Narrative failed: {e})"
 
-    return {
-        "stage1": classification, "answer": raw_answer, "code": all_code,
-        "queries": queries, "execution_plan": execution_plan,
-        "narrative": narrative, "error": None
-    }
+    return {"stage1":c,"answer":raw,"code":code,"queries":queries,
+            "execution_plan":ep,"narrative":n,"intensity":intensity,"error":None}
 
-def resolve_followup(question, history, schema, tables):
-    """Resolve follow-up questions into standalone questions."""
-    if not history:
-        return question, False
-    
-    recent = history[-3:]
-    context = "\n".join([
-        f"User: {h['question']}\nBot: {h['narrative'][:200]}...{h['narrative'][-200:]}"
-        for h in recent
-    ])
-    
-    resolved = call_llm(f"""Given this conversation history:
+def resolve(question, history):
+    if not history: return question, False
+    ctx = "\n".join([f"User: {h['question']}\nBot: {h['narrative'][:200]}...{h['narrative'][-200:]}" for h in history[-3:]])
+    r = llm(f"""Given this conversation:
 
-{context}
+{ctx}
 
 The user now says: {question}
 
-If the bot's last message ended with a suggested follow-up question and the user responds with "yes", "sure", "go ahead", "please do", or similar affirmation, rewrite it as that suggested follow-up question.
+If bot suggested a follow-up and user affirms, rewrite as that question.
+If referencing previous exchange, rewrite as standalone.
+Short metric follow-ups apply to MOST SPECIFIC entity discussed.
+If standalone, return unchanged.
+Return ONLY the rewritten question.""")
 
-If this is a follow-up that references the previous exchange (e.g. "break that down by state", "same but for 2017", "why?"), rewrite it as a complete standalone question that includes all necessary context.
+    clean = r.strip()
+    for p in ["rewritten question:","standalone question:","rewritten:","question:"]:
+        if clean.lower().startswith(p): clean = clean[len(p):].strip()
+    clean = clean.strip('"').strip("'")
+    return clean, clean.lower() != question.strip().lower()
 
-When the user asks a short follow-up about a metric (e.g. "avg value?", "how many?", "% of total?"), apply it to the MOST SPECIFIC entity discussed, not a broader set. If the previous exchange identified a single top result, the follow-up refers to that one result, not the entire list.
-
-If it's already a standalone question, return it unchanged.""")
-    
-    was_rewritten = resolved.strip().lower() != question.strip().lower()
-    return resolved.strip(), was_rewritten
-
-def get_action_summary(resolved_question):
-    """Get a brief action summary for the acknowledgment."""
-    summary = call_llm(
-        f"Summarize this question as a short action phrase starting with a verb "
-        f"(e.g. 'check average order value for bed products', 'analyze revenue by state'). "
-        f"Max 10 words. No markdown. Question: {resolved_question}"
-    )
-    return summary.strip().rstrip(".").replace("**", "").lower()
-
-def infer_depth(question, history, current_depth, auto_depth_set):
-    """Infer whether to switch to deeper analysis."""
-    deep_phrases = ["analyze", "analyse", "explain", "assess", "evaluate",
-                    "propose", "investigate", "deep dive", "in depth",
-                    "broadly", "comprehensive", "thorough", "explore",
-                    "why is", "why are", "why do", "what drives",
-                    "what factors", "root cause", "understand"]
-    
-    q_lower = question.lower()
-    
-    if current_depth == 0 and any(phrase in q_lower for phrase in deep_phrases):
-        return 1, "phrasing"
-    
-    if current_depth == 0 and not auto_depth_set and len(history) >= 3:
-        return 1, "conversation"
-    
-    return current_depth, None
-
-# ─── Session State Init ───
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "history" not in st.session_state:
-    st.session_state.history = []
-if "current_depth" not in st.session_state:
-    st.session_state.current_depth = 0
-if "auto_depth_set" not in st.session_state:
-    st.session_state.auto_depth_set = False
-if "api_key" not in st.session_state:
-    st.session_state.api_key = ""
-if "data_loaded" not in st.session_state:
-    st.session_state.data_loaded = False
-if "last_ack" not in st.session_state:
-    st.session_state.last_ack = ""
-
-ACK_OPTIONS = ["Got it", "Sure", "OK", "On it", "Let me check",
-               "Right", "Understood", "Will do", "Looking into it", "One moment"]
-
-# ─── Sidebar ───
+# ═══════════════════════════════════════════════════════════
+# SIDEBAR
+# ═══════════════════════════════════════════════════════════
 with st.sidebar:
-    st.markdown("## 📊 Analytics Bot")
-    st.markdown("---")
-    
-    api_key = st.text_input("Anthropic API Key", type="password", 
-                            value=st.session_state.api_key,
-                            help="Get yours at console.anthropic.com")
-    if api_key:
-        st.session_state.api_key = api_key
-    
-    st.markdown("---")
-    st.markdown("### Analysis Depth")
-    
-    depth_mode = st.radio(
-        "Mode",
-        ["⚡ Fast (depth=0)", "🔍 Deep (depth=1)", "🤖 Auto"],
-        index=2,
-        help="Fast: direct answers only. Deep: adds supplementary analysis. Auto: infers from your questions."
-    )
-    
-    if depth_mode == "⚡ Fast (depth=0)":
-        st.session_state.current_depth = 0
-        st.session_state.auto_depth_set = True  # prevent auto-override
-    elif depth_mode == "🔍 Deep (depth=1)":
-        st.session_state.current_depth = 1
-        st.session_state.auto_depth_set = True
-    else:
-        st.session_state.auto_depth_set = False
-    
-    st.markdown("---")
-    st.markdown("### Current State")
-    depth_label = "⚡ Fast" if st.session_state.current_depth == 0 else "🔍 Deep"
-    st.markdown(f"Depth: **{depth_label}**")
-    st.markdown(f"Messages: **{len(st.session_state.history)}**")
-    
-    st.markdown("---")
-    if st.button("🗑️ Clear Conversation"):
-        st.session_state.messages = []
-        st.session_state.history = []
-        st.session_state.current_depth = 0
-        st.session_state.auto_depth_set = False
-        st.session_state.last_ack = ""
-        st.rerun()
-    
-    st.markdown("---")
-    st.markdown(
-        "<div style='font-size:0.7rem; color:#64748b; line-height:1.4;'>"
-        "Built with Claude Sonnet 4.6<br>"
-        "Data: Olist Brazilian Ecommerce<br>"
-        "~100k orders · 2016-2018"
-        "</div>",
-        unsafe_allow_html=True
-    )
+    st.markdown("<h2 style='margin:0;font-weight:700;letter-spacing:-0.5px;'>◆ Analytics Agent</h2>", unsafe_allow_html=True)
 
-# ─── Main Area ───
-if not st.session_state.api_key:
-    st.markdown("## 📊 Analytics Bot")
-    st.markdown("Enter your Anthropic API key in the sidebar to get started.")
+    with st.expander("ℹ️ About"):
+        st.markdown(f"""
+<div class="about-box">
+<strong>Analytics Agent</strong> — AI-powered natural language analytics over Brazilian ecommerce data.<br><br>
+<strong>Data:</strong> Olist dataset (~100k orders, 2016–2018). 7 tables: orders, products, customers, sellers, payments, reviews.<br><br>
+<strong>Key feature:</strong> 3-way classification gate — refuses to answer when data is missing, preventing hallucinations.<br><br>
+<strong>Modes:</strong><br>
+• <strong>Retrieve</strong> — quick factual answers<br>
+• <strong>Suggest</strong> — answer + follow-up direction<br>
+• <strong>Explore</strong> — proactive supplementary analysis<br>
+• <strong>Reason</strong> — deep reasoning (Opus model)<br><br>
+<strong>Developer:</strong> <a href="https://www.linkedin.com/in/evgenihasin/" target="_blank">Evgeni Hasin</a> · <a href="https://github.com/ehasin" target="_blank">GitHub</a>
+</div>""", unsafe_allow_html=True)
+
     st.markdown("---")
-    st.markdown("""
-    **What this bot does:**
-    - Takes natural language questions about a Brazilian ecommerce dataset
-    - Classifies whether the question can be answered, needs clarification, or requires unavailable data
-    - Generates and executes SQL queries
-    - Returns factual, precise narrative answers
-    
-    **Try asking:**
-    - "How many unique customers are there?"
-    - "What is the total revenue by payment type?"
-    - "Which product category has the highest percentage of 1-star reviews?"
-    - "What is our cost structure?" *(will correctly refuse — no cost data)*
-    """)
+    api_key = st.text_input("🔑 Anthropic API Key", type="password", value=st.session_state.api_key,
+                            help="Get yours at console.anthropic.com")
+    if api_key: st.session_state.api_key = api_key
+
+    st.markdown("---")
+    theme = st.radio("Theme", ["🌙 Dark","☀️ Light"], index=0 if is_dark else 1, horizontal=True)
+    new_theme = "dark" if "Dark" in theme else "light"
+    if new_theme != st.session_state.theme:
+        st.session_state.theme = new_theme
+        st.rerun()
+
+    st.markdown("---")
+    if st.button("🗑️ Clear conversation"):
+        for k in ["messages","history"]: st.session_state[k] = []
+        for k in ["auto_intensity","user_intensity"]: st.session_state[k] = 0
+        st.session_state.intensity_override = False
+        st.session_state.first_prompt_sent = False
+        st.rerun()
+
+    st.markdown("---")
+    st.markdown(f"<div style='font-size:0.7rem;color:{text_secondary};line-height:1.5;'>"
+                f"Sonnet 4.6 · Opus 4.6 for Reason<br>Olist · ~100k orders · 2016–2018</div>",
+                unsafe_allow_html=True)
+
+# ═══════════════════════════════════════════════════════════
+# MAIN
+# ═══════════════════════════════════════════════════════════
+if not st.session_state.api_key:
+    st.markdown(f"""<div style="max-width:600px;margin:80px auto;text-align:center;">
+    <h1 style="font-weight:700;letter-spacing:-1px;">◆ Analytics Agent</h1>
+    <p style="color:{text_secondary};font-size:1rem;margin-bottom:32px;">
+    Natural language analytics over Brazilian ecommerce data.</p>
+    <p style="color:{text_secondary};font-size:0.88rem;">Enter your Anthropic API key in the sidebar to begin.</p>
+    </div>""", unsafe_allow_html=True)
     st.stop()
 
-# Load data
 try:
     tables = load_data()
     SCHEMA = load_schema()
-    if not st.session_state.data_loaded:
-        st.session_state.data_loaded = True
 except Exception as e:
     st.error(f"Failed to load data: {e}")
-    st.info("Make sure `data_model.json` is in the same directory as this app.")
     st.stop()
 
-# Display chat history
+# Mode slider
+c1, c2, c3 = st.columns([1,6,1])
+with c1: st.markdown(f"<div style='text-align:right;padding-top:28px'><span class='mode-label'>Fast</span></div>", unsafe_allow_html=True)
+with c2:
+    sv = st.select_slider("Mode", options=[0,1,2,3], value=st.session_state.user_intensity,
+                          format_func=lambda x: MODE_NAMES[x],
+                          help=" · ".join([f"{MODE_NAMES[i]}: {MODE_DESC[i]}" for i in range(4)]),
+                          label_visibility="collapsed")
+    if sv != st.session_state.user_intensity:
+        st.session_state.user_intensity = sv
+        st.session_state.intensity_override = True
+with c3: st.markdown(f"<div style='padding-top:28px'><span class='mode-label'>Deep</span></div>", unsafe_allow_html=True)
+
+ci = st.session_state.user_intensity if st.session_state.intensity_override else st.session_state.auto_intensity
+st.markdown(f"<div style='text-align:center;margin-bottom:12px;'><span class='pill {MODE_PILLS[ci]}'>{MODE_NAMES[ci]}</span> "
+            f"<span style='font-size:0.72rem;color:{text_secondary};'>{MODE_DESC[ci]}</span></div>", unsafe_allow_html=True)
+
+# Suggestions
+if not st.session_state.first_prompt_sent:
+    st.markdown(f"<div style='max-width:640px;margin:20px auto;text-align:center;'>"
+                f"<p style='color:{text_secondary};font-size:0.88rem;margin-bottom:16px;'>Try asking:</p></div>",
+                unsafe_allow_html=True)
+    suggestions = [
+        "How many unique customers?",
+        "Total revenue by payment type",
+        "Highest 1-star review rate category",
+        "What is our cost structure?",
+        "Overview of available data"
+    ]
+    cols = st.columns(len(suggestions))
+    for i, s in enumerate(suggestions):
+        with cols[i]:
+            if st.button(s, key=f"sug_{i}", use_container_width=True):
+                st.session_state.first_prompt_sent = True
+                st.session_state.messages.append({"role":"user","content":s})
+                st.rerun()
+
+# Chat history
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
+        if msg.get("transition"):
+            st.markdown(f"<div class='transition-msg'>{msg['transition']}</div>", unsafe_allow_html=True)
+        if msg.get("ack"):
+            st.markdown(f"<div class='transition-msg'>{msg['ack']}</div>", unsafe_allow_html=True)
         st.markdown(msg["content"])
         if msg.get("details"):
-            with st.expander("📋 Query Details"):
+            with st.expander("◆ Query details"):
                 st.code(msg["details"]["code"], language="sql")
-                if msg["details"].get("execution_plan"):
-                    st.markdown(f"**Execution Plan:**\n{msg['details']['execution_plan']}")
-                st.markdown(f"**Classification:** `{msg['details']['stage1']}`")
+                if msg["details"].get("ep"): st.caption(msg["details"]["ep"])
 
 # Chat input
-if question := st.chat_input("Ask a question about the data..."):
-    # Display user message
-    with st.chat_message("user"):
-        st.markdown(question)
-    st.session_state.messages.append({"role": "user", "content": question})
-    
-    # Handle fast/deep inline commands
-    manual_override = False
-    if question.strip().lower().startswith("fast"):
-        st.session_state.current_depth = 0
-        st.session_state.auto_depth_set = False
-        manual_override = True
-        remaining = question.strip()[4:].lstrip(":").lstrip()
-        if remaining:
-            question = remaining
-        else:
-            with st.chat_message("assistant"):
-                st.markdown("Switched to quick answer mode. ⚡")
-            st.session_state.messages.append({"role": "assistant", "content": "Switched to quick answer mode. ⚡"})
-            st.rerun()
-    
-    elif question.strip().lower().startswith("deep"):
-        st.session_state.current_depth = 1
-        st.session_state.auto_depth_set = False
-        manual_override = True
-        remaining = question.strip()[4:].lstrip(":").lstrip()
-        if remaining:
-            question = remaining
-        else:
-            with st.chat_message("assistant"):
-                st.markdown("Switched to detailed analysis mode. 🔍")
-            st.session_state.messages.append({"role": "assistant", "content": "Switched to detailed analysis mode. 🔍"})
-            st.rerun()
-    
+if prompt := st.chat_input("Ask a question about the data..."):
+    st.session_state.first_prompt_sent = True
+    with st.chat_message("user"): st.markdown(prompt)
+    st.session_state.messages.append({"role":"user","content":prompt})
+
     with st.chat_message("assistant"):
-        # Follow-up resolution
-        resolved_question = question
-        with st.spinner("Thinking..."):
-            resolved_question, was_rewritten = resolve_followup(
-                question, st.session_state.history, SCHEMA, tables
-            )
-            
-            if was_rewritten:
-                ack = random.choice([a for a in ACK_OPTIONS if a != st.session_state.last_ack])
-                st.session_state.last_ack = ack
-                action = get_action_summary(resolved_question)
-                ack_text = f"*{ack}, will {action}.*"
-                st.markdown(ack_text)
-            
-            # Auto depth inference
-            if not manual_override and not st.session_state.auto_depth_set:
-                new_depth, reason = infer_depth(
-                    question, st.session_state.history,
-                    st.session_state.current_depth, st.session_state.auto_depth_set
-                )
-                if new_depth != st.session_state.current_depth:
-                    st.session_state.current_depth = new_depth
-                    st.session_state.auto_depth_set = True
-                    if reason == "phrasing":
-                        st.info("📊 Switching to detailed analysis mode based on your question. Type `fast` to switch back.")
-                    else:
-                        st.info("📊 You seem to be digging deeper — switching to detailed analysis mode. Type `fast` to switch back.")
-        
-        # Run agent
-        with st.spinner("Analyzing..."):
-            r = analyst_agent(resolved_question, SCHEMA, tables, depth=st.session_state.current_depth)
-        
-        # Display narrative
-        narrative = r["narrative"]
-        st.markdown(narrative)
-        
-        # Display details in expander
+        with st.spinner(""):
+            resolved, rewritten = resolve(prompt, st.session_state.history)
+
+        ack_text = None
+        if rewritten:
+            ack = random.choice([a for a in ACK_OPTIONS if a != st.session_state.last_ack])
+            st.session_state.last_ack = ack
+            short = resolved[:80].rstrip("?").lower()
+            if len(resolved) > 80: short += "..."
+            ack_text = f"{ack}, will {short}."
+
+        if st.session_state.intensity_override:
+            ni = st.session_state.user_intensity
+        else:
+            ni, _ = infer_intensity(prompt, st.session_state.history)
+            st.session_state.auto_intensity = ni
+
+        prev_i = st.session_state.history[-1]["intensity"] if st.session_state.history else 0
+        transition = None
+        if ni != prev_i and st.session_state.history:
+            transition = TRANSITIONS.get((prev_i, ni), f"Switching to {MODE_NAMES[ni]}.")
+
+        if transition:
+            st.markdown(f"<div class='transition-msg'>{transition}</div>", unsafe_allow_html=True)
+        if ack_text:
+            st.markdown(f"<div class='transition-msg'>{ack_text}</div>", unsafe_allow_html=True)
+
+        with st.spinner(f"Analyzing ({MODE_NAMES[ni]})..."):
+            r = agent(resolved, SCHEMA, tables, intensity=ni)
+
+        st.markdown(r["narrative"])
+
         if r.get("code") and r["code"]:
-            with st.expander("📋 Query Details"):
+            with st.expander("◆ Query details"):
                 st.code(r["code"], language="sql")
-                if r.get("execution_plan"):
-                    st.markdown(f"**Execution Plan:**\n{r['execution_plan']}")
-                
-                badge_class = {
-                    "can_answer": "status-can-answer",
-                    "cant_answer": "status-cant-answer",
-                    "clarifications_needed": "status-clarification"
-                }.get(r["stage1"], "")
-                st.markdown(
-                    f'**Classification:** <span class="status-badge {badge_class}">{r["stage1"]}</span>',
-                    unsafe_allow_html=True
-                )
-    
-    # Build message content for history display
-    msg_content = ""
-    if was_rewritten:
-        msg_content += f"*{ack}, will {action}.*\n\n"
-    msg_content += narrative
-    
-    details = {
-        "code": r.get("code", ""),
-        "execution_plan": r.get("execution_plan"),
-        "stage1": r.get("stage1", "")
-    } if r.get("code") else None
-    
+                if r.get("execution_plan"): st.caption(r["execution_plan"])
+
+    details = {"code":r.get("code",""),"ep":r.get("execution_plan")} if r.get("code") else None
     st.session_state.messages.append({
-        "role": "assistant",
-        "content": msg_content,
-        "details": details
+        "role":"assistant","content":r["narrative"],
+        "transition":transition,"ack":ack_text,"details":details
     })
-    
-    # Update conversation history
     st.session_state.history.append({
-        "question": question,
-        "resolved": resolved_question,
-        "narrative": narrative,
-        "depth": st.session_state.current_depth
+        "question":prompt,"resolved":resolved,
+        "narrative":r["narrative"],"intensity":ni
     })
-    
     st.rerun()
